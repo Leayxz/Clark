@@ -1,0 +1,52 @@
+name: CD para EC2
+
+# Rodar sempre que houver push na branch main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout do código
+      uses: actions/checkout@v3
+
+    - name: Configurar chave SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_KEY }}" > ~/.ssh/ec2_key
+        chmod 600 ~/.ssh/ec2_key
+
+    - name: Testar conexão SSH
+      run: |
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key ubuntu@${{ secrets.EC2_HOST }} "echo 'Conexão estabelecida!'"
+
+    - name: Deploy na EC2
+      run: |
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/ec2_key ubuntu@${{ secrets.EC2_HOST }} << 'EOF'
+
+          # APAGA REPO EXISTENTE / PESSIMA PRATICA E INEFICIENTE
+          rm -rf clark
+
+          # COPIA PROJETO E ENTRA NO REPO
+          git clone https://github.com/Leayxz/clark.git /home/ubuntu/clark
+          cd clark
+
+          # ATIVA VENV
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r deps.txt
+          pip install gunicorn
+
+          # Django commands
+          python manage.py migrate --noinput
+          python manage.py collectstatic --noinput
+
+          # Reiniciar serviço
+          sudo systemctl restart gunicorn
+          sudo systemctl restart celery
+
+        EOF
